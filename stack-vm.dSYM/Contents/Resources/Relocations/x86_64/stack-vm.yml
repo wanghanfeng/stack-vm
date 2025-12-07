@@ -1,0 +1,5 @@
+---
+triple:          'x86_64-apple-darwin'
+binary-path:     '/Users/monkey/Documents/proj/lib/stack-vm/stack-vm'
+relocations:     []
+...

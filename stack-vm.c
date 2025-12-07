@@ -355,7 +355,7 @@ void vm_execute(StackVM* vm, const uint8_t* bytecode, int len) {
                         exit(1);
                     }
                     
-                    obj->prop_names = realloc(obj->prop_names, (obj->property_count + 1) * sizeof(char*));
+                    obj->prop_names = realloc(obj->prop_names, (obj->property_count + 1) * sizeof(uint8_t*));
                     obj->prop_values = realloc(obj->prop_values, (obj->property_count + 1) * sizeof(Value));
                     
                     obj->prop_names[obj->property_count] = strdup(prop_name);
@@ -455,11 +455,36 @@ void vm_execute(StackVM* vm, const uint8_t* bytecode, int len) {
                 Value a = vm_pop(vm);
                 if (a.type == VAL_NUMBER && b.type == VAL_NUMBER) {
                     vm_push(vm, val_number(a.data.number + b.data.number));
-                } else if (a.type == VAL_STRING) {
-                    // 字符串与任何类型相加，都将另一个类型转换为字符串
-                    StringObject* str_a = (StringObject*)a.data.obj;
+                } else if (a.type == VAL_STRING || b.type == VAL_STRING) {
+                    // 任何一方为字符串，都将另一方转换为字符串后拼接
+                    char* str_a;
+                    size_t len_a;
                     char* str_b;
                     size_t len_b;
+                    
+                    // 转换a为字符串
+                    if (a.type == VAL_STRING) {
+                        StringObject* sobj_a = (StringObject*)a.data.obj;
+                        len_a = sobj_a->length;
+                        str_a = sobj_a->chars;
+                    } else if (a.type == VAL_NUMBER) {
+                        char num_str[32];
+                        sprintf(num_str, "%.2f", a.data.number);
+                        len_a = strlen(num_str);
+                        str_a = num_str;
+                    } else if (a.type == VAL_BOOLEAN) {
+                        str_a = a.data.boolean ? "true" : "false";
+                        len_a = strlen(str_a);
+                    } else if (a.type == VAL_UNDEFINED) {
+                        str_a = "undefined";
+                        len_a = strlen(str_a);
+                    } else if (a.type == VAL_NULL) {
+                        str_a = "null";
+                        len_a = strlen(str_a);
+                    } else {
+                        str_a = "[object Object]";
+                        len_a = strlen(str_a);
+                    }
                     
                     // 转换b为字符串
                     if (b.type == VAL_STRING) {
@@ -486,9 +511,9 @@ void vm_execute(StackVM* vm, const uint8_t* bytecode, int len) {
                     }
                     
                     // 拼接字符串
-                    size_t total_len = str_a->length + len_b;
+                    size_t total_len = len_a + len_b;
                     char* new_chars = malloc(total_len + 1);
-                    strcpy(new_chars, str_a->chars);
+                    strcpy(new_chars, str_a);
                     strcat(new_chars, str_b);
                     
                     // 创建新字符串对象
@@ -597,6 +622,17 @@ int main() {
         OP_PUSH_VAR, 0,                          // 加载对象到栈顶
         OP_GET_PROP, 9, 'i', 's', 'S', 't', 'u', 'd', 'e', 'n', 't',  // 获取isStudent属性
         OP_PRINT,
+        
+        // 测试数值与字符串的加法运算
+        OP_PUSH_NUM, 0x00, 0x00, 0x00, 0x00, 0x00, 0xc0, 0x5e, 0x40,  // 推送数值123.0到栈顶
+        OP_PUSH_STR, 6, ' ', 'w', 'o', 'r', 'l', 'd',  // 推送字符串" world"
+        OP_ADD,                                   // 数值+字符串
+        OP_PRINT,                                 // 打印结果
+        
+        OP_PUSH_STR, 6, 'H', 'e', 'l', 'l', 'o', ' ',  // 推送字符串"Hello "
+        OP_PUSH_NUM, 0x00, 0x00, 0x00, 0x00, 0x00, 0x80, 0x7c, 0x40,  // 推送数值456.0到栈顶
+        OP_ADD,                                   // 字符串+数值
+        OP_PRINT,                                 // 打印结果
         
         OP_EXIT                                   // 退出程序
     };
