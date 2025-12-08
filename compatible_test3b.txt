@@ -1,0 +1,5 @@
+// 兼容版测试 - 部分3b（更接近object_test.txt）
+var obj = {
+    name: "Stack"
+};
+print(obj.name);

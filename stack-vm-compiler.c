@@ -74,7 +74,7 @@ bool is_digit(char c) {
 
 // 辅助函数：判断字符是否为字母、数字或下划线
 bool is_alnum(char c) {
-    return is_alpha(c) || is_digit(c) || c == '_';
+    return is_alpha(c) || is_digit(c) || c == '_' || c == '$';
 }
 
 // 辅助函数：检查是否为关键字
@@ -120,10 +120,49 @@ bool lexer_match(Lexer* lexer, char expected) {
     return false;
 }
 
-// 跳过空白字符
+// 跳过空白字符和注释
 void lexer_skip_whitespace(Lexer* lexer) {
-    while (is_whitespace(lexer_peek(lexer))) {
-        lexer_consume(lexer);
+    while (true) {
+        // 跳过空白字符
+        while (is_whitespace(lexer_peek(lexer))) {
+            lexer_consume(lexer);
+        }
+        
+        // 检查是否为注释
+        if (lexer_peek(lexer) == '/') {
+            lexer_consume(lexer); // 消费 '/' 
+            
+            if (lexer_peek(lexer) == '/') {
+                // 单行注释，跳过到行尾
+                while (lexer_peek(lexer) != '\n' && lexer_peek(lexer) != '\0') {
+                    lexer_consume(lexer);
+                }
+            } else if (lexer_peek(lexer) == '*') {
+                // 多行注释，跳过到 */
+                lexer_consume(lexer); // 消费 '*'
+                while (true) {
+                    if (lexer_peek(lexer) == '\0') {
+                        // 遇到文件末尾，退出注释处理
+                        break;
+                    } else if (lexer_peek(lexer) == '*') {
+                        lexer_consume(lexer); // 消费 '*'
+                        if (lexer_peek(lexer) == '/') {
+                            lexer_consume(lexer); // 消费 '/'
+                            break; // 注释结束
+                        }
+                    } else {
+                        lexer_consume(lexer);
+                    }
+                }
+            } else {
+                // 不是注释，将 '/' 放回去
+                lexer->pos--;
+                lexer->col--;
+                break;
+            }
+        } else {
+            break; // 不是空白也不是注释，退出循环
+        }
     }
 }
 
@@ -198,13 +237,16 @@ void lexer_next_token(Lexer* lexer, Token* token) {
             token->lexeme[1] = '\0';
             break;
         case '=': case ';': case '(': case ')': case '{': case '}':
-        case '.':
+        case '.': case ':': case ',':
             token->type = TOKEN_PUNCTUATOR;
             token->lexeme[0] = lexer_consume(lexer);
             token->lexeme[1] = '\0';
             break;
         default:
-            if (is_alpha(c) || c == '_') {
+            if (c == '\0') {
+                token->type = TOKEN_EOF;
+                token->lexeme[0] = '\0';
+            } else if (is_alpha(c) || c == '_' || c == '$') {
                 lexer_identifier(lexer, token);
                 // 检查是否为布尔值、undefined或null
                 if (strcmp(token->lexeme, "true") == 0 || strcmp(token->lexeme, "false") == 0) {
@@ -366,13 +408,13 @@ void parse_primary(Parser* parser) {
         // 生成 OP_NEW_OBJECT 指令
         emit_byte(parser, OP_NEW_OBJECT);
         
-        // 检查是否为 {} 或 {prop: value, ...}
+        // 解析属性列表
         if (parser_check(parser, TOKEN_PUNCTUATOR) && 
             parser->lexer->current.lexeme[0] == '}') {
             // 空对象 {}
             parser_match(parser, TOKEN_PUNCTUATOR); // 消费 '}'
         } else {
-            // 有属性的对象 {prop: value, ...}
+            // 至少有一个属性
             while (1) {
                 // 解析属性名
                 if (parser_check(parser, TOKEN_IDENTIFIER)) {
@@ -383,7 +425,7 @@ void parse_primary(Parser* parser) {
                     // 消费 ':'
                     if (!parser_check(parser, TOKEN_PUNCTUATOR) || 
                         parser->lexer->current.lexeme[0] != ':') {
-                        fprintf(stderr, "错误：对象属性缺少冒号\n");
+                        fprintf(stderr, "错误：对象属性缺少冒号，当前标记: %s\n", parser->lexer->current.lexeme);
                         exit(1);
                     }
                     parser_match(parser, TOKEN_PUNCTUATOR);
@@ -394,21 +436,25 @@ void parse_primary(Parser* parser) {
                     // 生成 OP_SET_PROP 指令
                     emit_byte(parser, OP_SET_PROP);
                     emit_string(parser, prop_name);
+                    
+                    // 检查是否为对象结束
+                    if (parser_check(parser, TOKEN_PUNCTUATOR) && 
+                        parser->lexer->current.lexeme[0] == '}') {
+                        parser_match(parser, TOKEN_PUNCTUATOR); // 消费 '}'
+                        break;
+                    }
+                    
+                    // 检查是否有逗号分隔符
+                    if (parser_check(parser, TOKEN_PUNCTUATOR) && 
+                        parser->lexer->current.lexeme[0] == ',') {
+                        parser_match(parser, TOKEN_PUNCTUATOR); // 消费 ','
+                        // 继续下一个属性
+                    } else {
+                        fprintf(stderr, "错误：对象属性列表格式错误，当前标记: %s\n", parser->lexer->current.lexeme);
+                        exit(1);
+                    }
                 } else {
-                    fprintf(stderr, "错误：对象属性名必须是标识符\n");
-                    exit(1);
-                }
-                
-                // 检查是否有逗号或结束符
-                if (parser_check(parser, TOKEN_PUNCTUATOR) && 
-                    parser->lexer->current.lexeme[0] == ',') {
-                    parser_match(parser, TOKEN_PUNCTUATOR); // 消费 ','
-                } else if (parser_check(parser, TOKEN_PUNCTUATOR) && 
-                           parser->lexer->current.lexeme[0] == '}') {
-                    parser_match(parser, TOKEN_PUNCTUATOR); // 消费 '}'
-                    break;
-                } else {
-                    fprintf(stderr, "错误：对象属性列表格式错误\n");
+                    fprintf(stderr, "错误：对象属性名必须是标识符，当前标记: %s\n", parser->lexer->current.lexeme);
                     exit(1);
                 }
             }
@@ -424,6 +470,12 @@ void parse_expression(Parser* parser) {
     parse_primary(parser);
     
     while (parser_check(parser, TOKEN_OPERATOR)) {
+        // 确保运算符标记有有效内容
+        if (strlen(parser->lexer->current.lexeme) == 0) {
+            fprintf(stderr, "错误：无效的运算符标记\n");
+            exit(1);
+        }
+        
         char op = parser->lexer->current.lexeme[0];
         parser_match(parser, TOKEN_OPERATOR);
         

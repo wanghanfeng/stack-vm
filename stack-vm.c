@@ -361,8 +361,8 @@ void vm_execute(StackVM* vm, const uint8_t* bytecode, int len) {
                     }
                 }
                 
-                // 释放对象引用
-                val_free(obj_val);
+                // 将对象重新压回栈顶，保持引用计数平衡
+                vm_push(vm, obj_val);
                 
                 // 将属性值压入栈顶
                 vm_push(vm, result);

@@ -1,0 +1,4 @@
+// 兼容版测试 - 部分3c（两个属性，无换行）
+var obj = {name: "Stack", version: 1};
+print(obj.name);
+print(obj.version);

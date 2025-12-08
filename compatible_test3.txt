@@ -1,0 +1,8 @@
+// 兼容版测试 - 部分3
+var obj = {
+    name: "Stack",
+    version: 1.0
+};
+
+print(obj.name);
+print(obj.version);

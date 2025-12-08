@@ -1,0 +1,5 @@
+// 对象测试
+var obj = {
+    name: "Test"
+};
+print(obj.name);
