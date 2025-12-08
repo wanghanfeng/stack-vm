@@ -655,38 +655,197 @@ uint8_t* compile(const char* source, int* bytecode_len) {
     return bytecode;
 }
 
-// 主函数：用于测试编译器
+// 打印帮助信息
+void print_help() {
+    printf("stack-vm-compiler - 将 Stack VM 源代码编译为字节码\n");
+    printf("\n");
+    printf("用法: stack-vm-compiler [选项] 输入文件 [输出文件]\n");
+    printf("\n");
+    printf("选项:\n");
+    printf("  -h, --help      显示此帮助信息\n");
+    printf("  -o <文件>       指定输出文件路径\n");
+    printf("  -c              将字节码输出到标准输出\n");
+    printf("  -e              直接执行编译后的字节码（不输出文件）\n");
+    printf("\n");
+    printf("示例:\n");
+    printf("  stack-vm-compiler source.txt output.bin\n");
+    printf("  stack-vm-compiler -o output.bin source.txt\n");
+    printf("  stack-vm-compiler -c source.txt | hexdump -C\n");
+    printf("  stack-vm-compiler -e source.txt\n");
+}
+
+// 读取文件内容
+char* read_file(const char* filename, size_t* size) {
+    FILE* file = fopen(filename, "r");
+    if (!file) {
+        fprintf(stderr, "错误：无法打开文件 '%s'\n", filename);
+        return NULL;
+    }
+    
+    // 获取文件大小
+    fseek(file, 0, SEEK_END);
+    *size = ftell(file);
+    fseek(file, 0, SEEK_SET);
+    
+    // 分配内存并读取文件内容
+    char* buffer = (char*)malloc(*size + 1);
+    if (!buffer) {
+        fprintf(stderr, "错误：内存分配失败\n");
+        fclose(file);
+        return NULL;
+    }
+    
+    size_t read = fread(buffer, 1, *size, file);
+    if (read != *size) {
+        fprintf(stderr, "错误：读取文件失败\n");
+        free(buffer);
+        fclose(file);
+        return NULL;
+    }
+    
+    buffer[*size] = '\0'; // 确保字符串以空字符结尾
+    fclose(file);
+    
+    return buffer;
+}
+
+// 写入文件内容
+bool write_file(const char* filename, const uint8_t* data, size_t size) {
+    FILE* file = fopen(filename, "wb");
+    if (!file) {
+        fprintf(stderr, "错误：无法打开文件 '%s' 进行写入\n", filename);
+        return false;
+    }
+    
+    size_t written = fwrite(data, 1, size, file);
+    if (written != size) {
+        fprintf(stderr, "错误：写入文件失败\n");
+        fclose(file);
+        return false;
+    }
+    
+    fclose(file);
+    return true;
+}
+
+// 主函数：命令行工具入口
 #ifdef COMPILER_TEST
-int main() {
-    // 测试代码
-    const char* test_code = 
-        "var x = 10;"
-        "var y = 20;"
-        "var z = x + y;"
-        "print(z);"
-        "var str1 = \"hello\";"
-        "var str2 = \"world\";"
-        "var str3 = str1 + str2;"
-        "print(str3);"
-        "var obj = {};"
-        "obj.prop = 100;"
-        "print(obj.prop);"
-        "{ var x = 30; print(x); }"
-        "print(x);";
+int main(int argc, char* argv[]) {
+    const char* input_file = NULL;
+    const char* output_file = NULL;
+    bool output_to_stdout = false;
+    bool execute_only = false;
     
-    printf("编译测试代码：\n%s\n\n", test_code);
+    // 解析命令行参数
+    for (int i = 1; i < argc; i++) {
+        if (strcmp(argv[i], "-h") == 0 || strcmp(argv[i], "--help") == 0) {
+            print_help();
+            return 0;
+        } else if (strcmp(argv[i], "-o") == 0) {
+            if (i + 1 < argc) {
+                output_file = argv[++i];
+            } else {
+                fprintf(stderr, "错误：选项 '-o' 需要一个参数\n");
+                print_help();
+                return 1;
+            }
+        } else if (strcmp(argv[i], "-c") == 0) {
+            output_to_stdout = true;
+        } else if (strcmp(argv[i], "-e") == 0) {
+            execute_only = true;
+        } else if (argv[i][0] == '-') {
+            fprintf(stderr, "错误：未知选项 '%s'\n", argv[i]);
+            print_help();
+            return 1;
+        } else if (!input_file) {
+            input_file = argv[i];
+        } else if (!output_file) {
+            output_file = argv[i];
+        } else {
+            fprintf(stderr, "错误：太多的参数\n");
+            print_help();
+            return 1;
+        }
+    }
     
-    // 编译代码
+    // 检查是否提供了输入文件
+    if (!input_file) {
+        fprintf(stderr, "错误：未提供输入文件\n");
+        print_help();
+        return 1;
+    }
+    
+    // 读取输入文件
+    size_t file_size;
+    char* source_code = read_file(input_file, &file_size);
+    if (!source_code) {
+        return 1;
+    }
+    
+    // 编译源代码
     int bytecode_len;
-    uint8_t* bytecode = compile(test_code, &bytecode_len);
+    uint8_t* bytecode = compile(source_code, &bytecode_len);
     
-    // 执行编译后的字节码
-    printf("执行编译后的字节码：\n");
-    StackVM vm;
-    vm_init(&vm);
-    vm_execute(&vm, bytecode, bytecode_len);
+    // 释放源代码内存
+    free(source_code);
     
-    // 释放资源
+    if (!bytecode) {
+        fprintf(stderr, "错误：编译失败\n");
+        return 1;
+    }
+    
+    // 根据选项处理编译结果
+    if (execute_only) {
+        // 执行编译后的字节码
+        StackVM vm;
+        vm_init(&vm);
+        vm_execute(&vm, bytecode, bytecode_len);
+    } else {
+        if (output_to_stdout) {
+            // 输出到标准输出
+            if ((int)fwrite(bytecode, 1, bytecode_len, stdout) != bytecode_len) {
+                fprintf(stderr, "错误：写入标准输出失败\n");
+                free(bytecode);
+                return 1;
+            }
+        } else {
+            // 写入输出文件
+            if (!output_file) {
+                // 如果没有指定输出文件，使用输入文件的基础名加上 .bin 扩展名
+                char* base_name = strdup(input_file);
+                char* dot = strrchr(base_name, '.');
+                if (dot) {
+                    *dot = '\0';
+                }
+                output_file = base_name;
+                
+                // 构造完整的输出文件名
+                char* full_output_file = (char*)malloc(strlen(output_file) + 5);
+                sprintf(full_output_file, "%s.bin", output_file);
+                
+                if (!write_file(full_output_file, bytecode, bytecode_len)) {
+                    free(full_output_file);
+                    free(base_name);
+                    free(bytecode);
+                    return 1;
+                }
+                
+                printf("成功编译：%s -> %s\n", input_file, full_output_file);
+                free(full_output_file);
+                free(base_name);
+            } else {
+                // 使用指定的输出文件
+                if (!write_file(output_file, bytecode, bytecode_len)) {
+                    free(bytecode);
+                    return 1;
+                }
+                
+                printf("成功编译：%s -> %s\n", input_file, output_file);
+            }
+        }
+    }
+    
+    // 释放字节码内存
     free(bytecode);
     
     return 0;

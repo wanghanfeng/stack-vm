@@ -21,6 +21,7 @@ typedef enum {
 
 // 前向声明
 typedef struct Value Value;
+typedef struct Env Env;
 
 // 对象头
 typedef struct ObjectHeader {
@@ -44,27 +45,25 @@ typedef struct {
 } Object;
 
 // 值类型
-typedef struct Value {
+struct Value {
     ValueType type;
     union {
         double number;
         bool boolean;
         ObjectHeader* obj;
     } data;
-} Value;
+};
 
 // --------------- 变量环境 ---------------
 #define MAX_VARS 32
 
-typedef struct Env Env;
-
 // 环境结构体
-typedef struct Env {
+struct Env {
     char* names[MAX_VARS];
     Value values[MAX_VARS];
     int var_count;
     Env* parent;
-} Env;
+};
 
 // --------------- 栈式虚拟机 ---------------
 typedef struct {
