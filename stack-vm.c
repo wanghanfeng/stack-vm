@@ -56,19 +56,23 @@ typedef struct Value {
 // 函数原型声明
 void val_free(Value v);
 
-// --------------- 进阶特性：变量环境（类似 JS 作用域链，简化为单环境）---------------
+// --------------- 进阶特性：变量环境（类似 JS 作用域链）---------------
 #define MAX_VARS 32
-typedef struct {
+typedef struct Env Env;
+
+// 环境结构体，支持作用域链
+typedef struct Env {
     char* names[MAX_VARS];  // 变量名
     Value values[MAX_VARS]; // 变量值
     int var_count;          // 已定义变量数
+    Env* parent;            // 父环境指针，形成作用域链
 } Env;
 
 // --------------- 栈式虚拟机（新增环境指针、函数调用栈）---------------
 typedef struct {
     Value stack[64];  // 操作数栈（存储 Value 类型，支持多类型）
     int sp;           // 栈指针
-    Env env;          // 变量环境
+    Env* current_env; // 当前环境指针（指向作用域链的顶部）
     int call_stack[16];// 函数调用栈（存储指令指针 ip，支持嵌套调用）
     int call_sp;      // 调用栈指针
 } StackVM;
@@ -89,7 +93,9 @@ typedef enum {
     OP_EXIT,        // 退出
     OP_NEW_OBJECT,  // 创建新对象
     OP_SET_PROP,    // 设置对象属性（栈顶：值，栈次顶：对象，后续：属性名）
-    OP_GET_PROP     // 获取对象属性（栈顶：对象，后续：属性名）
+    OP_GET_PROP,    // 获取对象属性（栈顶：对象，后续：属性名）
+    OP_PUSH_ENV,    // 创建新作用域（压入当前环境，创建新环境作为当前环境）
+    OP_POP_ENV      // 退出当前作用域（恢复之前的环境）
 } OpCode;
 
 // --------------- 内存管理工具函数 ---------------
@@ -194,22 +200,26 @@ void val_free(Value v) {
     }
 }
 
-// 查找变量（不存在返回undefined）
+// 查找变量（沿作用域链查找，不存在返回undefined）
 Value env_get(Env* env, const char* name) {
-    for (int i = 0; i < env->var_count; i++) {
-        if (strcmp(env->names[i], name) == 0) {
-            Value val = env->values[i];
-            // 增加引用计数，因为返回的是新的引用
-            if (val.type == VAL_STRING || val.type == VAL_OBJECT) {
-                gc_inc_ref(val.data.obj);
+    Env* current = env;
+    while (current != NULL) {
+        for (int i = 0; i < current->var_count; i++) {
+            if (strcmp(current->names[i], name) == 0) {
+                Value val = current->values[i];
+                // 增加引用计数，因为返回的是新的引用
+                if (val.type == VAL_STRING || val.type == VAL_OBJECT) {
+                    gc_inc_ref(val.data.obj);
+                }
+                return val;
             }
-            return val;
         }
+        current = current->parent; // 继续查找父环境
     }
     return val_undefined();
 }
 
-// 存储变量（已存在则覆盖，不存在则新增）
+// 存储变量（只在当前环境中设置，已存在则覆盖，不存在则新增）
 void env_set(Env* env, const char* name, Value val) {
     for (int i = 0; i < env->var_count; i++) {
         if (strcmp(env->names[i], name) == 0) {
@@ -236,10 +246,31 @@ void env_set(Env* env, const char* name, Value val) {
 }
 
 // --------------- 虚拟机核心操作 ---------------
+// 创建新环境
+Env* create_env(Env* parent) {
+    Env* env = malloc(sizeof(Env));
+    if (!env) {
+        fprintf(stderr, "内存分配失败！\n");
+        exit(1);
+    }
+    env->var_count = 0;
+    env->parent = parent;
+    return env;
+}
+
+// 释放环境
+void free_env(Env* env) {
+    for (int i = 0; i < env->var_count; i++) {
+        free(env->names[i]);
+        val_free(env->values[i]);
+    }
+    free(env);
+}
+
 void vm_init(StackVM* vm) {
     vm->sp = 0;
     vm->call_sp = 0;
-    vm->env.var_count = 0;
+    vm->current_env = create_env(NULL); // 创建全局环境
 }
 
 void vm_push(StackVM* vm, Value val) {
@@ -429,7 +460,7 @@ void vm_execute(StackVM* vm, const uint8_t* bytecode, int len) {
                 char name[name_len + 1];
                 memcpy(name, &bytecode[ip], name_len);
                 name[name_len] = '\0';
-                Value val = env_get(&vm->env, name);
+                Value val = env_get(vm->current_env, name);
                 if (val.type == VAL_UNDEFINED) {
                     fprintf(stderr, "未定义变量：%s\n", name);
                     exit(1);
@@ -445,8 +476,22 @@ void vm_execute(StackVM* vm, const uint8_t* bytecode, int len) {
                 memcpy(name, &bytecode[ip], name_len);
                 name[name_len] = '\0';
                 Value val = vm_pop(vm);
-                env_set(&vm->env, name, val);
+                env_set(vm->current_env, name, val);
                 ip += name_len;
+                break;
+            }
+            // 创建新作用域
+            case OP_PUSH_ENV: {
+                // 创建新环境，将当前环境作为父环境
+                vm->current_env = create_env(vm->current_env);
+                break;
+            }
+            // 退出当前作用域
+            case OP_POP_ENV: {
+                Env *old_env = vm->current_env;
+                vm->current_env = vm->current_env->parent;
+                // 释放当前环境
+                free_env(old_env);
                 break;
             }
             // 加法：支持数值+数值、字符串+字符串、字符串+数值（类似 JS 隐式转换）
@@ -569,6 +614,10 @@ void vm_execute(StackVM* vm, const uint8_t* bytecode, int len) {
                     case VAL_OBJECT: 
                         printf("输出：[object Object]\n"); 
                         break;
+                    default:
+                        printf("输出：未知类型\n"); 
+                        exit(1);
+                        break;
                 }
                 val_free(val);
                 break;
@@ -587,115 +636,59 @@ int main() {
     StackVM vm;
     vm_init(&vm);
 
-    // 测试多个对象的属性功能
+    // 测试作用域功能
     uint8_t bytecode[] = {
-        // 创建第一个对象并设置属性
-        OP_NEW_OBJECT,          // 创建一个新对象，对象引用在栈顶
-        OP_STORE_VAR, 1, 'p',   // 保存对象引用到变量p
+        // 全局作用域：定义全局变量
+        OP_PUSH_STR, 4, 'x','=','1','0',                    // 压入字符串 "10"
+        OP_STORE_VAR, 1, 'x',                       // 存储到全局变量 x = "10"
         
-        // 设置第一个对象属性：name = "John"
-        OP_PUSH_VAR, 1, 'p',                          // 加载对象到栈顶
-        OP_PUSH_STR, 4, 'J','o','h','n',              // 属性值
-        OP_SET_PROP, 4, 'n','a','m','e',              // 设置name属性 (属性名从指令流读取)
+        OP_PUSH_STR, 8,'s','=','g','l','o','b','a','l',    // 压入字符串 "global"
+        OP_STORE_VAR, 1, 's',                       // 存储到全局变量 s = "global"
         
-        // 设置第一个对象属性：age = 30
-        OP_PUSH_VAR, 1, 'p',                          // 加载对象到栈顶
-        OP_PUSH_NUM, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x3e, 0x40,  // 压入30.0
-        OP_SET_PROP, 3, 'a','g','e',                  // 设置age属性
+        // 打印全局变量
+        OP_PUSH_VAR, 1, 'x',                        // 加载全局变量 x
+        OP_PRINT,                                   // 打印 x (预期: 10)
         
-        // 创建第二个对象并设置属性
-        OP_NEW_OBJECT,          // 创建第二个新对象，对象引用在栈顶
-        OP_STORE_VAR, 1, 'q',   // 保存对象引用到变量q
+        OP_PUSH_VAR, 1, 's',                        // 加载全局变量 s
+        OP_PRINT,                                   // 打印 s (预期: global)
         
-        // 设置第二个对象属性：name = "Alice"
-        OP_PUSH_VAR, 1, 'q',                          // 加载对象到栈顶
-        OP_PUSH_STR, 5, 'A','l','i','c','e',          // 属性值
-        OP_SET_PROP, 4, 'n','a','m','e',              // 设置name属性
+        // 创建局部作用域
+        OP_PUSH_ENV,                                // 进入局部作用域
         
-        // 设置第二个对象属性：age = 25
-        OP_PUSH_VAR, 1, 'q',                          // 加载对象到栈顶
-        OP_PUSH_NUM, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x39, 0x40,  // 压入25.0
-        OP_SET_PROP, 3, 'a','g','e',                  // 设置age属性
+        // 局部作用域：定义局部变量，覆盖全局变量
+        OP_PUSH_STR, 4, 'x','=','2','0',                    // 压入字符串 "20"
+        OP_STORE_VAR, 1, 'x',                       // 存储到局部变量 x = "20"
         
-        // 创建第三个对象并设置属性
-        OP_NEW_OBJECT,          // 创建第三个新对象，对象引用在栈顶
-        OP_STORE_VAR, 1, 'r',   // 保存对象引用到变量r
+        OP_PUSH_STR, 7, 'y', '=','l','o','c','a','l',        // 压入字符串 "local"
+        OP_STORE_VAR, 1, 'y',                       // 存储到局部变量 y = "local"
         
-        // 设置第三个对象属性：name = "Bob"
-        OP_PUSH_VAR, 1, 'r',                          // 加载对象到栈顶
-        OP_PUSH_STR, 3, 'B','o','b',                  // 属性值
-        OP_SET_PROP, 4, 'n','a','m','e',              // 设置name属性
+        // 打印局部变量和全局变量
+        OP_PUSH_VAR, 1, 'x',                        // 加载局部变量 x
+        OP_PRINT,                                   // 打印 x (预期: 20)
         
-        // 设置第三个对象属性：age = 35
-        OP_PUSH_VAR, 1, 'r',                          // 加载对象到栈顶
-        OP_PUSH_NUM, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x41, 0x40,  // 压入35.0
-        OP_SET_PROP, 3, 'a','g','e',                  // 设置age属性
+        OP_PUSH_VAR, 1, 'y',                        // 加载局部变量 y
+        OP_PRINT,                                   // 打印 y (预期: local)
         
-        // 获取并打印第一个对象的name属性
-        OP_PUSH_VAR, 1, 'p',                          // 加载对象到栈顶
-        OP_GET_PROP, 4, 'n','a','m','e',              // 获取name属性
-        OP_PRINT,                                      // 打印
+        OP_PUSH_VAR, 1, 's',                        // 加载全局变量 s (从作用域链查找)
+        OP_PRINT,                                   // 打印 s (预期: global)
         
-        // 获取并打印第一个对象的age属性
-        OP_PUSH_VAR, 1, 'p',                          // 加载对象到栈顶
-        OP_GET_PROP, 3, 'a','g','e',                  // 获取age属性
-        OP_PRINT,                                      // 打印
+        // 退出局部作用域
+        OP_POP_ENV,                                 // 退出局部作用域
         
-        // 获取并打印第二个对象的name属性
-        OP_PUSH_VAR, 1, 'q',                          // 加载对象到栈顶
-        OP_GET_PROP, 4, 'n','a','m','e',              // 获取name属性
-        OP_PRINT,                                      // 打印
+        // 验证变量恢复到全局作用域
+        OP_PUSH_VAR, 1, 'x',                        // 加载全局变量 x
+        OP_PRINT,                                   // 打印 x (预期: 10)
         
-        // 获取并打印第二个对象的age属性
-        OP_PUSH_VAR, 1, 'q',                          // 加载对象到栈顶
-        OP_GET_PROP, 3, 'a','g','e',                  // 获取age属性
-        OP_PRINT,                                      // 打印
+        // 验证局部变量y已不存在
+        OP_PUSH_VAR, 1, 'y',                        // 尝试加载局部变量 y
+        OP_PRINT,                                   // 这里应该报错，因为y已不存在
         
-        // 获取并打印第三个对象的name属性
-        OP_PUSH_VAR, 1, 'r',                          // 加载对象到栈顶
-        OP_GET_PROP, 4, 'n','a','m','e',              // 获取name属性
-        OP_PRINT,                                      // 打印
-        
-        // 获取并打印第三个对象的age属性
-        OP_PUSH_VAR, 1, 'r',                          // 加载对象到栈顶
-        OP_GET_PROP, 3, 'a','g','e',                  // 获取age属性
-        OP_PRINT,                                      // 打印
-        
-        // 测试多个对象同时在栈上的情况
-        OP_PUSH_VAR, 1, 'p',                          // 加载第一个对象到栈顶
-        OP_PUSH_VAR, 1, 'q',                          // 加载第二个对象到栈顶
-        OP_PUSH_VAR, 1, 'r',                          // 加载第三个对象到栈顶
-        
-        // 现在栈上有三个对象引用，依次获取它们的name属性
-        OP_GET_PROP, 4, 'n','a','m','e',              // 获取第三个对象的name
-        OP_PRINT,                                      // 打印
-        
-        OP_GET_PROP, 4, 'n','a','m','e',              // 获取第二个对象的name
-        OP_PRINT,                                      // 打印
-        
-        OP_GET_PROP, 4, 'n','a','m','e',              // 获取第一个对象的name
-        OP_PRINT,                                      // 打印
-        
-        // 测试数值与字符串的加法运算
-        OP_PUSH_NUM, 0x00, 0x00, 0x00, 0x00, 0x00, 0xc0, 0x5e, 0x40,  // 推送数值123.0到栈顶
-        OP_PUSH_STR, 6, ' ', 'w', 'o', 'r', 'l', 'd',  // 推送字符串" world"
-        OP_ADD,                                   // 数值+字符串
-        OP_PRINT,                                 // 打印结果
-        
-        OP_PUSH_STR, 6, 'H', 'e', 'l', 'l', 'o', ' ',  // 推送字符串"Hello "
-        OP_PUSH_NUM, 0x00, 0x00, 0x00, 0x00, 0x00, 0x80, 0x7c, 0x40,  // 推送数值456.0到栈顶
-        OP_ADD,                                   // 字符串+数值
-        OP_PRINT,                                 // 打印结果
-        
-        OP_EXIT                                   // 退出程序
+        OP_EXIT                                     // 退出程序
     };
     
     vm_execute(&vm, bytecode, sizeof(bytecode));
     
-    // 释放变量环境内存
-    for (int i = 0; i < vm.env.var_count; i++) {
-        free(vm.env.names[i]);
-        val_free(vm.env.values[i]);
-    }
+    // 释放全局环境内存
+    free_env(vm.current_env);
     return 0;
 }
