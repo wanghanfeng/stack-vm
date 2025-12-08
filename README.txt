@@ -1,0 +1,1 @@
+./stack-vm-compiler -e js_test3.txt
