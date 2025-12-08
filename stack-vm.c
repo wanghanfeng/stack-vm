@@ -3,100 +3,14 @@
 #include <stdint.h>
 #include <string.h>
 #include <stdbool.h>
+#include "stack-vm.h"
 
-// --------------- 进阶特性：类型系统（适配 JS 动态类型）---------------
-
-// 常量定义
+// --------------- 常量定义 ---------------
 #define MAX_PROPS 64 // 每个对象的最大属性数
+#define MAX_VARS 32  // 每个环境的最大变量数
 
-// 值类型枚举
-typedef enum {
-    VAL_NUMBER,  // 数值类型
-    VAL_STRING,  // 字符串类型
-    VAL_BOOLEAN, // 布尔类型
-    VAL_UNDEFINED, // undefined
-    VAL_NULL,    // null
-    VAL_OBJECT   // 对象类型（基础对象支持）
-} ValueType;
-
-// 前向声明值类型
-typedef struct Value Value;
-
-// 对象头，用于内存管理和类型标记
-typedef struct ObjectHeader {
-    int ref_count;   // 引用计数
-    ValueType type;  // 对象类型
-} ObjectHeader;
-
-// 字符串对象
-typedef struct {
-    ObjectHeader header;
-    size_t length;
-    char* chars;
-} StringObject;
-
-// 基础对象
-typedef struct {
-    ObjectHeader header;
-    int property_count;
-    char** prop_names;
-    Value* prop_values;
-} Object;
-
-// 值类型
-typedef struct Value {
-    ValueType type;
-    union {
-        double number;     // 数值
-        bool boolean;      // 布尔值
-        ObjectHeader* obj; // 对象（字符串、普通对象等）
-    } data;
-} Value;
-
-// 函数原型声明
+// --------------- 函数原型声明 ---------------
 void val_free(Value v);
-
-// --------------- 进阶特性：变量环境（类似 JS 作用域链）---------------
-#define MAX_VARS 32
-typedef struct Env Env;
-
-// 环境结构体，支持作用域链
-typedef struct Env {
-    char* names[MAX_VARS];  // 变量名
-    Value values[MAX_VARS]; // 变量值
-    int var_count;          // 已定义变量数
-    Env* parent;            // 父环境指针，形成作用域链
-} Env;
-
-// --------------- 栈式虚拟机（新增环境指针、函数调用栈）---------------
-typedef struct {
-    Value stack[64];  // 操作数栈（存储 Value 类型，支持多类型）
-    int sp;           // 栈指针
-    Env* current_env; // 当前环境指针（指向作用域链的顶部）
-    int call_stack[16];// 函数调用栈（存储指令指针 ip，支持嵌套调用）
-    int call_sp;      // 调用栈指针
-} StackVM;
-
-// --------------- 字节码指令（新增变量、函数相关指令）---------------
-typedef enum {
-    OP_PUSH_NUM,    // 压入数值
-    OP_PUSH_STR,    // 压入字符串（后续跟字符串长度+字节流）
-    OP_PUSH_BOOL,   // 压入布尔值（后续1字节）
-    OP_PUSH_UNDEFINED, // 压入undefined
-    OP_PUSH_NULL,   // 压入null
-    OP_PUSH_VAR,    // 压入变量（后续跟变量名长度+字节流）
-    OP_STORE_VAR,   // 存储变量（栈顶值 → 变量）
-    OP_ADD,         // 加法（支持多种类型）
-    OP_CALL,        // 函数调用（后续跟函数起始指令偏移）
-    OP_RET,         // 函数返回
-    OP_PRINT,       // 打印栈顶值
-    OP_EXIT,        // 退出
-    OP_NEW_OBJECT,  // 创建新对象
-    OP_SET_PROP,    // 设置对象属性（栈顶：值，栈次顶：对象，后续：属性名）
-    OP_GET_PROP,    // 获取对象属性（栈顶：对象，后续：属性名）
-    OP_PUSH_ENV,    // 创建新作用域（压入当前环境，创建新环境作为当前环境）
-    OP_POP_ENV      // 退出当前作用域（恢复之前的环境）
-} OpCode;
 
 // --------------- 内存管理工具函数 ---------------
 // 创建对象头
@@ -632,6 +546,7 @@ void vm_execute(StackVM* vm, const uint8_t* bytecode, int len) {
 }
 
 // 测试：执行「变量赋值 + 函数调用 + 字符串拼接 + 数值运算 + 新类型测试」
+#ifndef COMPILER_TEST
 int main() {
     StackVM vm;
     vm_init(&vm);
@@ -692,3 +607,4 @@ int main() {
     free_env(vm.current_env);
     return 0;
 }
+#endif
