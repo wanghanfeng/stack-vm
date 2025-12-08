@@ -587,41 +587,94 @@ int main() {
     StackVM vm;
     vm_init(&vm);
 
-    // 测试对象属性功能
+    // 测试多个对象的属性功能
     uint8_t bytecode[] = {
-        // 创建对象并保存到变量
-        OP_NEW_OBJECT,
-        OP_STORE_VAR, 0,                         // 变量名长度0，使用索引存储
+        // 创建第一个对象并设置属性
+        OP_NEW_OBJECT,          // 创建一个新对象，对象引用在栈顶
+        OP_STORE_VAR, 1, 'p',   // 保存对象引用到变量p
         
-        // 设置对象属性：name = "John"
-        OP_PUSH_VAR, 0,                          // 加载对象到栈顶（变量名长度0）
-        OP_PUSH_STR, 4, 'J', 'o', 'h', 'n',     // 压入属性值
-        OP_SET_PROP, 4, 'n', 'a', 'm', 'e',     // 设置name属性
+        // 设置第一个对象属性：name = "John"
+        OP_PUSH_VAR, 1, 'p',                          // 加载对象到栈顶
+        OP_PUSH_STR, 4, 'J','o','h','n',              // 属性值
+        OP_SET_PROP, 4, 'n','a','m','e',              // 设置name属性 (属性名从指令流读取)
         
-        // 设置对象属性：age = 30
-        OP_PUSH_VAR, 0,                          // 加载对象到栈顶
+        // 设置第一个对象属性：age = 30
+        OP_PUSH_VAR, 1, 'p',                          // 加载对象到栈顶
         OP_PUSH_NUM, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x3e, 0x40,  // 压入30.0
-        OP_SET_PROP, 3, 'a', 'g', 'e',           // 设置age属性
+        OP_SET_PROP, 3, 'a','g','e',                  // 设置age属性
         
-        // 设置对象属性：isStudent = true
-        OP_PUSH_VAR, 0,                          // 加载对象到栈顶
-        OP_PUSH_BOOL, 1,                         // 压入属性值
-        OP_SET_PROP, 9, 'i', 's', 'S', 't', 'u', 'd', 'e', 'n', 't',  // 设置isStudent属性
+        // 创建第二个对象并设置属性
+        OP_NEW_OBJECT,          // 创建第二个新对象，对象引用在栈顶
+        OP_STORE_VAR, 1, 'q',   // 保存对象引用到变量q
         
-        // 获取并打印 name 属性
-        OP_PUSH_VAR, 0,                          // 加载对象到栈顶
-        OP_GET_PROP, 4, 'n', 'a', 'm', 'e',     // 获取name属性
-        OP_PRINT,
+        // 设置第二个对象属性：name = "Alice"
+        OP_PUSH_VAR, 1, 'q',                          // 加载对象到栈顶
+        OP_PUSH_STR, 5, 'A','l','i','c','e',          // 属性值
+        OP_SET_PROP, 4, 'n','a','m','e',              // 设置name属性
         
-        // 获取并打印 age 属性
-        OP_PUSH_VAR, 0,                          // 加载对象到栈顶
-        OP_GET_PROP, 3, 'a', 'g', 'e',           // 获取age属性
-        OP_PRINT,
+        // 设置第二个对象属性：age = 25
+        OP_PUSH_VAR, 1, 'q',                          // 加载对象到栈顶
+        OP_PUSH_NUM, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x39, 0x40,  // 压入25.0
+        OP_SET_PROP, 3, 'a','g','e',                  // 设置age属性
         
-        // 获取并打印 isStudent 属性
-        OP_PUSH_VAR, 0,                          // 加载对象到栈顶
-        OP_GET_PROP, 9, 'i', 's', 'S', 't', 'u', 'd', 'e', 'n', 't',  // 获取isStudent属性
-        OP_PRINT,
+        // 创建第三个对象并设置属性
+        OP_NEW_OBJECT,          // 创建第三个新对象，对象引用在栈顶
+        OP_STORE_VAR, 1, 'r',   // 保存对象引用到变量r
+        
+        // 设置第三个对象属性：name = "Bob"
+        OP_PUSH_VAR, 1, 'r',                          // 加载对象到栈顶
+        OP_PUSH_STR, 3, 'B','o','b',                  // 属性值
+        OP_SET_PROP, 4, 'n','a','m','e',              // 设置name属性
+        
+        // 设置第三个对象属性：age = 35
+        OP_PUSH_VAR, 1, 'r',                          // 加载对象到栈顶
+        OP_PUSH_NUM, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x41, 0x40,  // 压入35.0
+        OP_SET_PROP, 3, 'a','g','e',                  // 设置age属性
+        
+        // 获取并打印第一个对象的name属性
+        OP_PUSH_VAR, 1, 'p',                          // 加载对象到栈顶
+        OP_GET_PROP, 4, 'n','a','m','e',              // 获取name属性
+        OP_PRINT,                                      // 打印
+        
+        // 获取并打印第一个对象的age属性
+        OP_PUSH_VAR, 1, 'p',                          // 加载对象到栈顶
+        OP_GET_PROP, 3, 'a','g','e',                  // 获取age属性
+        OP_PRINT,                                      // 打印
+        
+        // 获取并打印第二个对象的name属性
+        OP_PUSH_VAR, 1, 'q',                          // 加载对象到栈顶
+        OP_GET_PROP, 4, 'n','a','m','e',              // 获取name属性
+        OP_PRINT,                                      // 打印
+        
+        // 获取并打印第二个对象的age属性
+        OP_PUSH_VAR, 1, 'q',                          // 加载对象到栈顶
+        OP_GET_PROP, 3, 'a','g','e',                  // 获取age属性
+        OP_PRINT,                                      // 打印
+        
+        // 获取并打印第三个对象的name属性
+        OP_PUSH_VAR, 1, 'r',                          // 加载对象到栈顶
+        OP_GET_PROP, 4, 'n','a','m','e',              // 获取name属性
+        OP_PRINT,                                      // 打印
+        
+        // 获取并打印第三个对象的age属性
+        OP_PUSH_VAR, 1, 'r',                          // 加载对象到栈顶
+        OP_GET_PROP, 3, 'a','g','e',                  // 获取age属性
+        OP_PRINT,                                      // 打印
+        
+        // 测试多个对象同时在栈上的情况
+        OP_PUSH_VAR, 1, 'p',                          // 加载第一个对象到栈顶
+        OP_PUSH_VAR, 1, 'q',                          // 加载第二个对象到栈顶
+        OP_PUSH_VAR, 1, 'r',                          // 加载第三个对象到栈顶
+        
+        // 现在栈上有三个对象引用，依次获取它们的name属性
+        OP_GET_PROP, 4, 'n','a','m','e',              // 获取第三个对象的name
+        OP_PRINT,                                      // 打印
+        
+        OP_GET_PROP, 4, 'n','a','m','e',              // 获取第二个对象的name
+        OP_PRINT,                                      // 打印
+        
+        OP_GET_PROP, 4, 'n','a','m','e',              // 获取第一个对象的name
+        OP_PRINT,                                      // 打印
         
         // 测试数值与字符串的加法运算
         OP_PUSH_NUM, 0x00, 0x00, 0x00, 0x00, 0x00, 0xc0, 0x5e, 0x40,  // 推送数值123.0到栈顶
@@ -636,7 +689,7 @@ int main() {
         
         OP_EXIT                                   // 退出程序
     };
-
+    
     vm_execute(&vm, bytecode, sizeof(bytecode));
     
     // 释放变量环境内存
