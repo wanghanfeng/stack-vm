@@ -1,0 +1,12 @@
+// 测试 - 添加字符串操作
+// 1. 变量定义和基本数学运算
+var x = 10;
+var y = 20;
+var z = x + y;
+print("x + y = ", z);
+
+// 2. 字符串操作
+var str1 = "Hello";
+var str2 = "World";
+var str3 = str1 + " " + str2;
+print(str3);

@@ -1,0 +1,6 @@
+// 简化版JavaScript测试 - 只包含基本功能
+// 1. 变量定义和基本数学运算
+var x = 10;
+var y = 20;
+var z = x + y;
+print("x + y = ", z);

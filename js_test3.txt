@@ -1,0 +1,29 @@
+// 测试 - 添加条件语句
+// 1. 变量定义和基本数学运算
+var x = 10;
+var y = 20;
+var z = x + y;
+print("x + y = ", z);
+
+// 2. 字符串操作
+var str1 = "Hello";
+var str2 = "World";
+var str3 = str1 + " " + str2;
+print(str3);
+
+// 3. 对象创建和属性访问
+var obj = {
+    name: "Stack VM",
+    version: 1.0,
+    active: true
+};
+
+print("对象名称: ", obj.name);
+print("对象版本: ", obj.version);
+
+// 4. 条件语句
+if (x > y) {
+    print("x大于y");
+} else {
+    print("x小于等于y");
+}

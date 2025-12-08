@@ -504,36 +504,62 @@ void vm_execute(StackVM* vm, const uint8_t* bytecode, int len) {
                 ip = vm_ret(vm);
                 break;
             }
-            // 打印：支持多类型输出
+            // 打印：支持多类型输出和多个参数
             case OP_PRINT: {
-                Value val = vm_pop(vm);
-                switch (val.type) {
-                    case VAL_NUMBER: 
-                        printf("输出：%g\n", val.data.number); 
-                        break;
-                    case VAL_STRING: {
-                        StringObject* str_obj = (StringObject*)val.data.obj;
-                        printf("输出：%s\n", str_obj->chars); 
-                        break;
-                    }
-                    case VAL_BOOLEAN: 
-                        printf("输出：%s\n", val.data.boolean ? "true" : "false"); 
-                        break;
-                    case VAL_UNDEFINED: 
-                        printf("输出：undefined\n"); 
-                        break;
-                    case VAL_NULL: 
-                        printf("输出：null\n"); 
-                        break;
-                    case VAL_OBJECT: 
-                        printf("输出：[object Object]\n"); 
-                        break;
-                    default:
-                        printf("输出：未知类型\n"); 
-                        exit(1);
-                        break;
+                // 读取参数数量
+                uint8_t arg_count = bytecode[ip++];
+                // ip++ 是因为参数数量占用一个字节
+                
+                // 从栈中弹出所有参数（注意顺序是倒序）
+                Value* args = malloc(sizeof(Value) * arg_count);
+                for (int i = arg_count - 1; i >= 0; i--) {
+                    args[i] = vm_pop(vm);
                 }
-                val_free(val);
+                
+                // 打印所有参数
+                printf("输出：");
+                for (int i = 0; i < arg_count; i++) {
+                    Value val = args[i];
+                    switch (val.type) {
+                        case VAL_NUMBER: 
+                            printf("%g", val.data.number); 
+                            break;
+                        case VAL_STRING: {
+                            StringObject* str_obj = (StringObject*)val.data.obj;
+                            printf("%s", str_obj->chars); 
+                            break;
+                        }
+                        case VAL_BOOLEAN: 
+                            printf("%s", val.data.boolean ? "true" : "false"); 
+                            break;
+                        case VAL_UNDEFINED: 
+                            printf("undefined"); 
+                            break;
+                        case VAL_NULL: 
+                            printf("null"); 
+                            break;
+                        case VAL_OBJECT: 
+                            printf("[object Object]"); 
+                            break;
+                        default:
+                            printf("未知类型"); 
+                            break;
+                    }
+                    
+                    // 在参数之间添加空格（如果不是最后一个参数）
+                    if (i < arg_count - 1) {
+                        printf(" ");
+                    }
+                }
+                
+                // 打印换行符
+                printf("\n");
+                
+                // 释放参数占用的内存
+                for (int i = 0; i < arg_count; i++) {
+                    val_free(args[i]);
+                }
+                free(args);
                 break;
             }
             case OP_EXIT:

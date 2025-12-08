@@ -30,7 +30,9 @@ typedef enum {
     KW_VAR,
     KW_PRINT,
     KW_FUNCTION,
-    KW_RETURN
+    KW_RETURN,
+    KW_IF,
+    KW_ELSE
 } Keyword;
 
 // 标记结构体
@@ -83,6 +85,8 @@ int is_keyword(const char* lexeme) {
     if (strcmp(lexeme, "print") == 0) return KW_PRINT;
     if (strcmp(lexeme, "function") == 0) return KW_FUNCTION;
     if (strcmp(lexeme, "return") == 0) return KW_RETURN;
+    if (strcmp(lexeme, "if") == 0) return KW_IF;
+    if (strcmp(lexeme, "else") == 0) return KW_ELSE;
     return -1;
 }
 
@@ -584,7 +588,7 @@ void parse_var_declaration(Parser* parser) {
     }
 }
 
-// 解析打印语句（print(x);）
+// 解析打印语句（print(x); 或 print(x, y, ...);）
 void parse_print_statement(Parser* parser) {
     // 消费 print 关键字
     parser_match_keyword(parser, "print");
@@ -593,8 +597,20 @@ void parse_print_statement(Parser* parser) {
         parser->lexer->current.lexeme[0] == '(') {
         parser_match(parser, TOKEN_PUNCTUATOR); // 消费 '('
         
-        // 解析要打印的表达式
-        parse_expression(parser);
+        // 解析要打印的表达式列表（支持多个参数，用逗号分隔）
+        int arg_count = 0;
+        while (true) {
+            parse_expression(parser);
+            arg_count++;
+            
+            // 检查是否有逗号，如果有则继续解析下一个参数
+            if (parser_check(parser, TOKEN_PUNCTUATOR) && 
+                parser->lexer->current.lexeme[0] == ',') {
+                parser_match(parser, TOKEN_PUNCTUATOR); // 消费 ','
+            } else {
+                break; // 没有逗号，结束参数解析
+            }
+        }
         
         // 检查是否有右括号
         if (!parser_check(parser, TOKEN_PUNCTUATOR) || 
@@ -606,6 +622,8 @@ void parse_print_statement(Parser* parser) {
         
         // 生成 OP_PRINT 指令
         emit_byte(parser, OP_PRINT);
+        // 生成参数数量
+        emit_byte(parser, (uint8_t)arg_count);
     } else {
         fprintf(stderr, "错误：print 语句缺少左括号\n");
         exit(1);
@@ -638,8 +656,11 @@ void parse_block(Parser* parser) {
                 parse_assignment(parser);
             }
             
-            // 消费分号
-            parser_match(parser, TOKEN_PUNCTUATOR);
+            // 只有当当前标记是分号时才消费它
+            if (parser_check(parser, TOKEN_PUNCTUATOR) && 
+                parser->lexer->current.lexeme[0] == ';') {
+                parser_match(parser, TOKEN_PUNCTUATOR);
+            }
         }
         
         // 生成 OP_POP_ENV 指令，退出当前作用域
@@ -663,9 +684,12 @@ void parse_statement(Parser* parser) {
     } else if (parser_check(parser, TOKEN_PUNCTUATOR) && 
                parser->lexer->current.lexeme[0] == '{') {
         parse_block(parser);
-    } else {
-        // 可能是赋值语句
+    } else if (parser_check(parser, TOKEN_IDENTIFIER)) {
+        // 可能是赋值语句或标识符表达式
         parse_assignment(parser);
+    } else {
+        fprintf(stderr, "错误：无法解析的语句，当前标记是 '%s'\n", parser->lexer->current.lexeme);
+        exit(1);
     }
 }
 
@@ -673,8 +697,11 @@ void parse_statement(Parser* parser) {
 void parse_program(Parser* parser) {
     while (!parser_check(parser, TOKEN_EOF)) {
         parse_statement(parser);
-        // 消费分号（如果有）
-        parser_match(parser, TOKEN_PUNCTUATOR);
+        // 只有当当前标记是分号时才消费它
+        if (parser_check(parser, TOKEN_PUNCTUATOR) && 
+            parser->lexer->current.lexeme[0] == ';') {
+            parser_match(parser, TOKEN_PUNCTUATOR);
+        }
     }
     
     // 最后添加 OP_EXIT 指令

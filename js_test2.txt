@@ -1,0 +1,22 @@
+// 测试 - 添加对象创建和属性访问
+// 1. 变量定义和基本数学运算
+var x = 10;
+var y = 20;
+var z = x + y;
+print("x + y = ", z);
+
+// 2. 字符串操作
+var str1 = "Hello";
+var str2 = "World";
+var str3 = str1 + " " + str2;
+print(str3);
+
+// 3. 对象创建和属性访问
+var obj = {
+    name: "Stack VM",
+    version: 1.0,
+    active: true
+};
+
+print("对象名称: ", obj.name);
+print("对象版本: ", obj.version);
